@@ -1,0 +1,79 @@
+version: "3"
+services:
+  # Order service
+  order_service:
+    build: ./orders
+    ports:
+      - "50001:50001" # Dapr instances communicate over gRPC, so we need to expose this port
+    networks:
+      - hello-dapr
+    depends_on:
+      - redis
+      - placement
+
+  # Orders Dapr sidecar
+  orders_dapr:
+    image: "daprio/dapr:edge"
+    container_name: orders_placement
+    command: [
+      "./daprd",
+      "--app-id", "order_service",
+      "--placement-host-address", "placement:50006",
+      "--dapr-grpc-port", "50001",
+      "--resources-path", "./components"
+    ]
+    volumes:
+      - "./components/:/components"
+    depends_on:
+      - order_service
+    network_mode: "service:order_service" # attach the orders_dapr service to the orders_service network namespace
+
+  # Inventory service
+  inventory_service:
+    build: ./inventory
+    ports:
+      - "50002:50002"
+    environment:
+      - APP_ID=inventory-service
+    networks:
+      - hello-dapr
+    depends_on:
+      - redis
+      - placement
+
+  # Inventory Dapr sidecar
+  inventory_dapr:
+    image: "daprio/dapr:edge"
+    container_name: inventory_placement
+    command: [
+      "./daprd",
+      "--app-id", "inventory_service",
+      "--app-port", "8001",
+      "--placement-host-address", "placement:50006",
+      "--dapr-grpc-port", "50002",
+      "--resources-path", "./components"
+    ]
+    volumes:
+      - "./components/:/components"
+    depends_on:
+      - inventory_service
+    network_mode: "service:inventory_service"
+
+  redis:
+    image: "redis:alpine"
+    container_name: "redis"
+    ports:
+      - "6379:6379"
+    networks:
+      - hello-dapr
+
+  placement:
+    image: "daprio/dapr"
+    command: [ "./placement", "--port", "50006" ]
+    ports:
+      - "50006:50006"
+    networks:
+      - hello-dapr
+
+networks:
+  hello-dapr: null
